@@ -1,0 +1,17 @@
+{
+  "name": "Hello World PWA",
+  "short_name": "HelloPWA",
+  "description": "A minimal PWA scaffold",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#4a90d9",
+  "icons": [
+    {
+      "src": "/static/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
