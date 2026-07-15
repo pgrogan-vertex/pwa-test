@@ -43,7 +43,7 @@
       display: inline-block;
     }
     .status.offline { background: #fff5f5; color: #c53030; }
-    #install-btn {
+    #install-btn, #notify-btn {
       display: none;
       margin-top: 1.5rem;
       padding: 0.75rem 1.5rem;
@@ -55,7 +55,8 @@
       cursor: pointer;
       width: 100%;
     }
-    #install-btn:hover { background: #357abd; }
+    #install-btn:hover, #notify-btn:hover { background: #357abd; }
+    #notify-btn:disabled { background: #a0aec0; cursor: default; }
   </style>
 </head>
 <body>
@@ -64,6 +65,7 @@
     <p>Using flask now ayooo... Your PWA scaffold is running. AYOOO<br>Install it to use it like a native app.</p>
     <span class="status" id="sw-status">Checking service worker…</span>
     <button id="install-btn">Add to Home Screen</button>
+    <button id="notify-btn">Enable Notifications</button>
   </div>
 
   <script>
@@ -98,6 +100,43 @@
       deferredPrompt.prompt();
       deferredPrompt.userChoice.then(() => { installBtn.style.display = 'none'; });
     });
+
+    // Push notifications
+    const notifyBtn = document.getElementById('notify-btn');
+
+    function urlBase64ToUint8Array(base64String) {
+      const padding = '='.repeat((4 - base64String.length % 4) % 4);
+      const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const rawData = atob(base64);
+      return Uint8Array.from([...rawData].map(char => char.charCodeAt(0)));
+    }
+
+    async function subscribeToPush() {
+      const registration = await navigator.serviceWorker.ready;
+      const keyRes = await fetch('/api/vapid-public-key');
+      const { publicKey } = await keyRes.json();
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(publicKey)
+      });
+      await fetch('/api/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(subscription)
+      });
+      notifyBtn.textContent = 'Notifications enabled';
+      notifyBtn.disabled = true;
+    }
+
+    if ('serviceWorker' in navigator && 'PushManager' in window) {
+      notifyBtn.style.display = 'block';
+      notifyBtn.addEventListener('click', async () => {
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+          subscribeToPush();
+        }
+      });
+    }
   </script>
 </body>
 </html>

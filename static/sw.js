@@ -1,4 +1,4 @@
-const CACHE = 'hello-pwa-v3';
+const CACHE = 'hello-pwa-v4';
 const SHELL = ['/', '/static/manifest.json', '/static/sw.js'];
 
 self.addEventListener('install', event => {
@@ -33,4 +33,29 @@ self.addEventListener('fetch', event => {
       caches.match(event.request).then(cached => cached || fetch(event.request))
     );
   }
+});
+
+self.addEventListener('push', event => {
+  let data = { title: 'Notification', body: '' };
+  if (event.data) {
+    try { data = event.data.json(); } catch (e) { data.body = event.data.text(); }
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title || 'Notification', {
+      body: data.body || '',
+      icon: '/static/icon.svg'
+    })
+  );
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({ type: 'window' }).then(windowClients => {
+      for (const client of windowClients) {
+        if (client.url === '/' && 'focus' in client) return client.focus();
+      }
+      if (clients.openWindow) return clients.openWindow('/');
+    })
+  );
 });
