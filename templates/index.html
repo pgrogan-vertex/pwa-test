@@ -112,13 +112,23 @@
     }
 
     async function subscribeToPush() {
+      notifyBtn.textContent = 'Checking service worker…';
       const registration = await navigator.serviceWorker.ready;
+
+      notifyBtn.textContent = 'Fetching VAPID key…';
       const keyRes = await fetch('/api/vapid-public-key');
+      if (!keyRes.ok) {
+        throw new Error(`vapid-public-key returned ${keyRes.status}`);
+      }
       const { publicKey } = await keyRes.json();
+
+      notifyBtn.textContent = 'Subscribing…';
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(publicKey)
       });
+
+      notifyBtn.textContent = 'Registering with server…';
       const subRes = await fetch('/api/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -134,13 +144,24 @@
     if ('serviceWorker' in navigator && 'PushManager' in window) {
       notifyBtn.style.display = 'block';
       notifyBtn.addEventListener('click', async () => {
-        const permission = await Notification.requestPermission();
-        if (permission !== 'granted') return;
+        notifyBtn.textContent = 'Requesting permission…';
+        let permission;
+        try {
+          permission = await Notification.requestPermission();
+        } catch (err) {
+          console.error('Permission request failed:', err);
+          notifyBtn.textContent = 'Permission request failed';
+          return;
+        }
+        if (permission !== 'granted') {
+          notifyBtn.textContent = `Permission: ${permission} (tap to retry)`;
+          return;
+        }
         try {
           await subscribeToPush();
         } catch (err) {
           console.error('Push subscription failed:', err);
-          notifyBtn.textContent = 'Enable failed - tap to retry';
+          notifyBtn.textContent = `Failed: ${err.message}`.slice(0, 60);
         }
       });
     }
