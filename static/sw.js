@@ -1,5 +1,5 @@
-const CACHE = 'hello-pwa-v4';
-const SHELL = ['/', '/static/manifest.json', '/static/sw.js'];
+const CACHE = 'hello-pwa-v5';
+const SHELL = ['/', '/static/manifest.json', '/sw.js'];
 
 self.addEventListener('install', event => {
   event.waitUntil(

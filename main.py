@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, send_from_directory
 from pywebpush import webpush, WebPushException
 
 load_dotenv()
@@ -29,6 +29,12 @@ def save_subscriptions(subscriptions):
 @app.get("/")
 def root():
     return render_template("index.html")
+
+
+@app.get("/sw.js")
+def service_worker():
+    # Served from the root (not /static/) so its default scope covers the whole site.
+    return send_from_directory("static", "sw.js")
 
 
 @app.get("/api/hello")

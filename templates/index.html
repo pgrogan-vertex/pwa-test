@@ -72,7 +72,7 @@
     // Service worker registration
     const swStatus = document.getElementById('sw-status');
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/static/sw.js')
+      navigator.serviceWorker.register('/sw.js')
         .then(() => { swStatus.textContent = 'Service worker active'; })
         .catch(() => { swStatus.textContent = 'Service worker failed'; swStatus.classList.add('offline'); });
     } else {
