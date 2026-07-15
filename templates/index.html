@@ -119,11 +119,14 @@
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(publicKey)
       });
-      await fetch('/api/subscribe', {
+      const subRes = await fetch('/api/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(subscription)
       });
+      if (!subRes.ok) {
+        throw new Error(`/api/subscribe returned ${subRes.status}`);
+      }
       notifyBtn.textContent = 'Notifications enabled';
       notifyBtn.disabled = true;
     }
@@ -132,8 +135,12 @@
       notifyBtn.style.display = 'block';
       notifyBtn.addEventListener('click', async () => {
         const permission = await Notification.requestPermission();
-        if (permission === 'granted') {
-          subscribeToPush();
+        if (permission !== 'granted') return;
+        try {
+          await subscribeToPush();
+        } catch (err) {
+          console.error('Push subscription failed:', err);
+          notifyBtn.textContent = 'Enable failed - tap to retry';
         }
       });
     }
