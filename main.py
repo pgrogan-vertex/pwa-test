@@ -14,6 +14,7 @@ SUBSCRIPTIONS_FILE = Path("subscriptions.json")
 VAPID_PRIVATE_KEY = os.environ["VAPID_PRIVATE_KEY"]
 VAPID_PUBLIC_KEY = os.environ["VAPID_PUBLIC_KEY"]
 VAPID_CLAIM_EMAIL = os.environ["VAPID_CLAIM_EMAIL"]
+CRON_SECRET = os.environ["CRON_SECRET"]
 
 
 def load_subscriptions():
@@ -24,6 +25,28 @@ def load_subscriptions():
 
 def save_subscriptions(subscriptions):
     SUBSCRIPTIONS_FILE.write_text(json.dumps(subscriptions))
+
+
+def send_push(title, body):
+    """Push `title`/`body` to every stored subscription, pruning any that fail."""
+    subscriptions = load_subscriptions()
+    still_valid = []
+    sent = 0
+    for subscription in subscriptions:
+        try:
+            webpush(
+                subscription_info=subscription,
+                data=json.dumps({"title": title, "body": body}),
+                vapid_private_key=VAPID_PRIVATE_KEY,
+                vapid_claims={"sub": VAPID_CLAIM_EMAIL},
+            )
+            still_valid.append(subscription)
+            sent += 1
+        except WebPushException:
+            pass  # subscription expired or invalid; drop it
+
+    save_subscriptions(still_valid)
+    return sent
 
 
 @app.get("/")
@@ -61,22 +84,16 @@ def subscribe():
 def notify():
     payload = request.get_json(silent=True) or {}
     message = payload.get("message", "Test notification from your PWA!")
+    sent = send_push("PWA Notification", message)
+    return {"sent": sent}
 
-    subscriptions = load_subscriptions()
-    still_valid = []
-    sent = 0
-    for subscription in subscriptions:
-        try:
-            webpush(
-                subscription_info=subscription,
-                data=json.dumps({"title": "PWA Notification", "body": message}),
-                vapid_private_key=VAPID_PRIVATE_KEY,
-                vapid_claims={"sub": VAPID_CLAIM_EMAIL},
-            )
-            still_valid.append(subscription)
-            sent += 1
-        except WebPushException:
-            pass  # subscription expired or invalid; drop it
 
-    save_subscriptions(still_valid)
+@app.post("/api/jobs/daily-check")
+def daily_check():
+    if request.headers.get("X-Cron-Secret") != CRON_SECRET:
+        return {"error": "unauthorized"}, 401
+
+    # TODO: pull data from the database, compute/decide what to say here.
+    # For now this just proves the scheduled trigger reaches a real push.
+    sent = send_push("Daily Check", "This is your scheduled daily check-in.")
     return {"sent": sent}
