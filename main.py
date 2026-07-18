@@ -10,7 +10,7 @@ load_dotenv()
 
 app = Flask(__name__)
 
-SUBSCRIPTIONS_FILE = Path("subscriptions.json")
+SUBSCRIPTIONS_FILE = Path(os.environ.get("DATA_DIR", ".")) / "subscriptions.json"
 VAPID_PRIVATE_KEY = os.environ["VAPID_PRIVATE_KEY"]
 VAPID_PUBLIC_KEY = os.environ["VAPID_PUBLIC_KEY"]
 VAPID_CLAIM_EMAIL = os.environ["VAPID_CLAIM_EMAIL"]
@@ -39,6 +39,8 @@ def send_push(title, body):
                 data=json.dumps({"title": title, "body": body}),
                 vapid_private_key=VAPID_PRIVATE_KEY,
                 vapid_claims={"sub": VAPID_CLAIM_EMAIL},
+                headers={"Urgency": "high"},
+                ttl=3600,
             )
             still_valid.append(subscription)
             sent += 1
