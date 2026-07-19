@@ -72,9 +72,23 @@ def vapid_public_key():
     return {"publicKey": VAPID_PUBLIC_KEY}
 
 
+def is_valid_subscription(subscription):
+    """Check the shape browsers send from PushManager.subscribe(): endpoint + p256dh/auth keys."""
+    if not isinstance(subscription, dict):
+        return False
+    if not isinstance(subscription.get("endpoint"), str) or not subscription["endpoint"]:
+        return False
+    keys = subscription.get("keys")
+    if not isinstance(keys, dict):
+        return False
+    return isinstance(keys.get("p256dh"), str) and isinstance(keys.get("auth"), str)
+
+
 @app.post("/api/subscribe")
 def subscribe():
-    subscription = request.get_json()
+    subscription = request.get_json(silent=True)
+    if not is_valid_subscription(subscription):
+        return {"error": "invalid subscription"}, 400
     subscriptions = load_subscriptions()
     if subscription not in subscriptions:
         subscriptions.append(subscription)
@@ -84,6 +98,9 @@ def subscribe():
 
 @app.post("/api/notify")
 def notify():
+    if request.headers.get("X-Cron-Secret") != CRON_SECRET:
+        return {"error": "unauthorized"}, 401
+
     payload = request.get_json(silent=True) or {}
     message = payload.get("message", "Test notification from your PWA!")
     sent = send_push("PWA Notification", message)
@@ -99,3 +116,7 @@ def daily_check():
     # For now this just proves the scheduled trigger reaches a real push.
     sent = send_push("Daily Check", "This is your scheduled daily check-in.")
     return {"sent": sent}
+
+
+if __name__ == "__main__":
+    app.run(debug=True)

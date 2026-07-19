@@ -1,0 +1,100 @@
+Foundations pass - 2026-07-18
+==============================
+
+Context: the push-notification feature (subscribe, VAPID, persisted
+subscriptions, protected daily-check cron) was working end to end. Before
+adding more features, I fixed three gaps that were more likely to bite than
+help as the project keeps moving fast. This file is a record of what
+changed and why, for later reference.
+
+1. Added .env.example
+----------------------
+File: .env.example (new)
+
+What: A checked-in template listing the four environment variables main.py
+requires (VAPID_PRIVATE_KEY, VAPID_PUBLIC_KEY, VAPID_CLAIM_EMAIL,
+CRON_SECRET), plus a comment on the optional DATA_DIR, with no real
+secrets in it.
+
+Why: main.py reads these with os.environ["NAME"], which raises a KeyError
+and crashes the process on startup if any is missing. There was no
+in-repo documentation of what those four variables are, what format they
+should be in, or how to generate them (VAPID_CLAIM_EMAIL needs a
+"mailto:" prefix; CRON_SECRET is a bare random token). .env itself is
+gitignored on purpose (it holds real secrets), so without this file,
+setting the project up on a new machine meant reverse-engineering the
+required vars from main.py's exception messages one at a time.
+
+2. Validated the shape of POST /api/subscribe payloads
+--------------------------------------------------------
+File: main.py
+
+What: Added is_valid_subscription(), which checks the request body is a
+dict with a non-empty string "endpoint" and a "keys" dict containing
+string "p256dh" and "auth" fields (the shape the browser's
+PushManager.subscribe() actually returns). /api/subscribe now calls
+request.get_json(silent=True) and returns 400 {"error": "invalid
+subscription"} if that check fails, instead of trusting the body as-is.
+
+Why: The old code took whatever JSON arrived and appended it straight
+into subscriptions.json. A malformed or missing body either 500'd (None
+has no .get) or got silently written to the subscriptions store. Bad
+entries in that file would later cause webpush() to fail unpredictably
+inside send_push() for every notification send, not just once at
+subscribe time.
+
+3. Required the shared secret on POST /api/notify
+----------------------------------------------------
+Files: main.py, notify_test (local dev script, gitignored)
+
+What: /api/notify now checks the X-Cron-Secret header against
+CRON_SECRET before sending any push, returning 401 {"error":
+"unauthorized"} if it doesn't match - the same check /api/jobs/daily-check
+already did. Updated the local notify_test curl script to send that
+header (reading CRON_SECRET from the shell environment) so it still
+works.
+
+Why: /api/jobs/daily-check was already protected with this header, but
+/api/notify - which fans a push out to every stored subscription - was
+wide open. Anyone who found the URL (e.g. by reading notify_test, or
+guessing the route) could spam every subscriber. Reusing CRON_SECRET
+instead of introducing a second secret keeps the "server-to-server /
+manual-trigger" endpoints consistent without adding new config.
+
+Verified locally
+------------------
+Ran the app under gunicorn with dummy env vars and DATA_DIR=/tmp, then
+curled each endpoint directly:
+  - POST /api/subscribe with a bad body ({"foo":"bar"})       -> 400
+  - POST /api/subscribe with a valid subscription shape       -> 201
+  - POST /api/notify without X-Cron-Secret                    -> 401
+  - POST /api/notify with the correct X-Cron-Secret            -> passed
+    the auth check and reached send_push() (a downstream 500 occurred
+    only because the dummy VAPID_PRIVATE_KEY used for the test wasn't a
+    real key - not related to these changes).
+
+4. Made `python main.py` actually run a dev server
+-----------------------------------------------------
+File: main.py
+
+What: Added `if __name__ == "__main__": app.run(debug=True)` at the
+bottom of the file.
+
+Why: CLAUDE.md documents `python main.py` as the way to run a local dev
+server, but main.py had no entrypoint calling app.run() - the command did
+nothing. This was a documentation-accuracy fix: now the documented
+command works, and it also gets Flask's debug reloader (auto-restarts on
+file changes) and in-browser tracebacks for local development.
+debug=True is safe here because Railway always runs the app via gunicorn
+(per Procfile/railway.toml), never via this __main__ block, so the
+Werkzeug debugger's code-execution risk never reaches a real deployment.
+
+Verified: ran `python main.py` locally with dummy env vars, curled GET /,
+got 200.
+
+Not done in this pass (flagged earlier, lower priority)
+-----------------------------------------------------------
+- No health-check route for Railway/uptime checks.
+- No automated tests.
+- send_push() only catches WebPushException; other exceptions from
+  webpush() (e.g. malformed key data) still propagate as a 500.
