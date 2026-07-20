@@ -5,4 +5,5 @@ __pycache__/
 *swp
 claude_random/
 subscriptions.json
+habits.db*
 notify_test

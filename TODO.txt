@@ -1,0 +1,75 @@
+Scaffolding backlog
+====================
+Tabled for now (2026-07-18) - not urgent, revisit when they start to hurt.
+
+- [ ] Health-check route. Railway/uptime tools currently have nothing
+      cheap to poll; `/` renders a full template just to check liveness.
+
+- [ ] Automated tests. No test suite exists yet - nothing catches
+      regressions as the app grows (e.g. subscribe validation, notify
+      auth, health check would be a reasonable first batch).
+
+- [ ] Log push failures instead of dropping silently. send_push() in
+      main.py catches WebPushException and just removes the subscription
+      with no log line - no visibility if pushes start failing broadly.
+
+- [ ] send_push() only catches WebPushException. Other exceptions from
+      webpush() (e.g. malformed VAPID key data) still propagate as an
+      unhandled 500 instead of being caught/logged like the expected
+      failure case.
+
+- [ ] Habit-tracking daily checkup. Prompt to log habit metrics (eating,
+      sleep, etc.) daily, store them, analyze statistically over time.
+      Resolves the TODO already sitting in daily_check() at main.py:115
+      ("pull data from the database, compute/decide what to say here").
+      Fields themselves are undecided/TBD - architecture below assumes
+      config-driven fields, not a fixed set.
+
+      Architecture (agreed 2026-07-19, no code written yet):
+
+      Storage: DATA_DIR/habits.db via stdlib sqlite3 (no new dependency),
+      same volume/env-var pattern as SUBSCRIPTIONS_FILE (main.py:13).
+      Schema via CREATE TABLE IF NOT EXISTS at startup, no migration
+      framework - consistent with this repo's scale. Set
+      `PRAGMA journal_mode=WAL` at connection time since gunicorn may run
+      multiple workers/threads.
+
+      Data model: EAV, not a JSON blob column -
+        metric_entries(entry_date TEXT, metric_key TEXT,
+                        metric_value NUMERIC, recorded_at TEXT,
+                        UNIQUE(entry_date, metric_key))
+      Chosen over a JSON-per-day column because plain SQL aggregates
+      (AVG/GROUP BY on metric_key) are the whole point of "analyze
+      statistically," and EAV keeps that simple on SQLite. New metrics
+      later are just new metric_key values - no schema change.
+
+      API surface:
+        GET  /api/habits/fields  - metric definitions (key, label, type);
+                                    single source of truth the frontend
+                                    form is built from
+        GET  /api/habits/today   - { logged: bool, metrics: {...} }
+        POST /api/habits         - upsert today's metric rows
+        GET  /api/habits?start=&end= - range query for a future stats view
+
+      Reminder: repurpose /api/jobs/daily-check (main.py:191-205) rather
+      than a second cron service - skip the push if today's already
+      logged, change the message to a habit-log prompt. DONE 2026-07-19.
+
+      In-app prompt: on load, index.html's script calls
+      /api/habits/today; if logged is false, show a modal built from
+      /api/habits/fields.
+
+      Open questions / considerations:
+        - metric_value is NUMERIC-only for now. Need a value_type or
+          separate text-value column if a non-numeric field (e.g. a
+          free-text note) ends up wanted - decide once actual fields
+          are picked.
+        - Railway volume cap is 500MB on the current (trial) plan
+          (confirmed via `railway volume list`, 32MB used as of
+          2026-07-19). Not a near-term concern for small daily numeric
+          rows, but worth knowing the ceiling exists if the plan doesn't
+          change.
+        - No decision yet on whether /api/habits endpoints need auth
+          (existing /api/notify and /api/jobs/daily-check use
+          X-Cron-Secret; habits endpoints are user-facing, not
+          cron-facing, so that pattern may not directly apply).

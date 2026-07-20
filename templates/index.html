@@ -57,6 +57,40 @@
     }
     #install-btn:hover, #notify-btn:hover { background: #357abd; }
     #notify-btn:disabled { background: #a0aec0; cursor: default; }
+
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      z-index: 10;
+    }
+    .modal-overlay .card { text-align: left; }
+    .modal-overlay h2 { font-size: 1.3rem; color: #1a202c; margin-bottom: 1.25rem; }
+    .habit-field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      font-size: 0.9rem;
+      color: #4a5568;
+      margin-bottom: 1rem;
+    }
+    .habit-field input {
+      font-size: 1rem;
+      padding: 0.6rem 0.75rem;
+      border: 1px solid #cbd5e0;
+      border-radius: 8px;
+    }
+    .habit-actions { display: flex; gap: 0.75rem; margin-top: 0.5rem; }
+    .habit-actions button { flex: 1; padding: 0.75rem; border-radius: 8px; border: none; font-size: 1rem; cursor: pointer; }
+    .habit-actions button[type="submit"] { background: #4a90d9; color: white; }
+    .habit-actions button[type="submit"]:hover { background: #357abd; }
+    .habit-actions button[type="submit"]:disabled { background: #a0aec0; cursor: default; }
+    .habit-actions button#habit-skip-btn { background: #edf2f7; color: #4a5568; }
+    .habit-actions button#habit-skip-btn:hover { background: #e2e8f0; }
   </style>
 </head>
 <body>
@@ -66,6 +100,19 @@
     <span class="status" id="sw-status">Checking service worker…</span>
     <button id="install-btn">Add to Home Screen</button>
     <button id="notify-btn">Enable Notifications</button>
+  </div>
+
+  <div class="modal-overlay" id="habit-modal">
+    <div class="card">
+      <h2>Daily check-in</h2>
+      <form id="habit-form">
+        <div id="habit-fields"></div>
+        <div class="habit-actions">
+          <button type="button" id="habit-skip-btn">Not now</button>
+          <button type="submit">Save</button>
+        </div>
+      </form>
+    </div>
   </div>
 
   <script>
@@ -165,6 +212,66 @@
         }
       });
     }
+
+    // Daily habit check-in prompt
+    const habitModal = document.getElementById('habit-modal');
+    const habitForm = document.getElementById('habit-form');
+    const habitFieldsEl = document.getElementById('habit-fields');
+    const habitSkipBtn = document.getElementById('habit-skip-btn');
+    const habitSaveBtn = habitForm.querySelector('button[type="submit"]');
+
+    async function initHabitPrompt() {
+      try {
+        const todayRes = await fetch('/api/habits/today');
+        if (!todayRes.ok) return;
+        const { logged } = await todayRes.json();
+        if (logged) return;
+
+        const fieldsRes = await fetch('/api/habits/fields');
+        if (!fieldsRes.ok) return;
+        const { fields } = await fieldsRes.json();
+        if (!fields.length) return;
+
+        habitFieldsEl.innerHTML = fields.map(f => `
+          <label class="habit-field">
+            ${f.label}
+            <input name="${f.key}" type="${f.type === 'number' ? 'number' : 'text'}" step="any" required>
+          </label>
+        `).join('');
+
+        habitModal.style.display = 'flex';
+      } catch (err) {
+        console.error('Habit prompt init failed:', err);
+      }
+    }
+
+    habitForm.addEventListener('submit', async e => {
+      e.preventDefault();
+      const metrics = {};
+      for (const [key, value] of new FormData(habitForm).entries()) {
+        metrics[key] = Number(value);
+      }
+
+      habitSaveBtn.disabled = true;
+      habitSaveBtn.textContent = 'Saving…';
+      try {
+        const res = await fetch('/api/habits', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ metrics })
+        });
+        if (!res.ok) throw new Error(`save failed: ${res.status}`);
+        habitModal.style.display = 'none';
+      } catch (err) {
+        console.error('Habit save failed:', err);
+        habitSaveBtn.textContent = 'Failed, retry';
+        habitSaveBtn.disabled = false;
+      }
+    });
+
+    habitSkipBtn.addEventListener('click', () => { habitModal.style.display = 'none'; });
+
+    initHabitPrompt();
   </script>
 </body>
 </html>

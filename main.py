@@ -1,5 +1,7 @@
 import json
 import os
+import sqlite3
+from datetime import date, datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -11,10 +13,41 @@ load_dotenv()
 app = Flask(__name__)
 
 SUBSCRIPTIONS_FILE = Path(os.environ.get("DATA_DIR", ".")) / "subscriptions.json"
+HABITS_DB = Path(os.environ.get("DATA_DIR", ".")) / "habits.db"
 VAPID_PRIVATE_KEY = os.environ["VAPID_PRIVATE_KEY"]
 VAPID_PUBLIC_KEY = os.environ["VAPID_PUBLIC_KEY"]
 VAPID_CLAIM_EMAIL = os.environ["VAPID_CLAIM_EMAIL"]
 CRON_SECRET = os.environ["CRON_SECRET"]
+
+# Placeholder metric - swap/extend once real habit fields are decided.
+HABIT_FIELDS = [
+    {"key": "sleep_hours", "label": "Sleep (hours)", "type": "number"},
+]
+
+
+def get_habits_db():
+    conn = sqlite3.connect(HABITS_DB)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_habits_db():
+    with get_habits_db() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS metric_entries (
+                entry_date TEXT NOT NULL,
+                metric_key TEXT NOT NULL,
+                metric_value NUMERIC NOT NULL,
+                recorded_at TEXT NOT NULL,
+                UNIQUE(entry_date, metric_key)
+            )
+            """
+        )
+
+
+init_habits_db()
 
 
 def load_subscriptions():
@@ -96,6 +129,54 @@ def subscribe():
     return {"status": "subscribed"}, 201
 
 
+@app.get("/api/habits/fields")
+def habit_fields():
+    return {"fields": HABIT_FIELDS}
+
+
+@app.get("/api/habits/today")
+def habits_today():
+    today = date.today().isoformat()
+    with get_habits_db() as conn:
+        rows = conn.execute(
+            "SELECT metric_key, metric_value FROM metric_entries WHERE entry_date = ?",
+            (today,),
+        ).fetchall()
+    metrics = {row["metric_key"]: row["metric_value"] for row in rows}
+    return {"logged": bool(metrics), "metrics": metrics}
+
+
+@app.post("/api/habits")
+def save_habits():
+    payload = request.get_json(silent=True) or {}
+    metrics = payload.get("metrics")
+    if not isinstance(metrics, dict) or not metrics:
+        return {"error": "invalid metrics"}, 400
+
+    valid_keys = {field["key"] for field in HABIT_FIELDS}
+    today = date.today().isoformat()
+    recorded_at = datetime.utcnow().isoformat()
+
+    rows = []
+    for key, value in metrics.items():
+        if key not in valid_keys or isinstance(value, bool) or not isinstance(value, (int, float)):
+            return {"error": f"invalid metric: {key}"}, 400
+        rows.append((today, key, value, recorded_at))
+
+    with get_habits_db() as conn:
+        conn.executemany(
+            """
+            INSERT INTO metric_entries (entry_date, metric_key, metric_value, recorded_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(entry_date, metric_key) DO UPDATE SET
+                metric_value = excluded.metric_value,
+                recorded_at = excluded.recorded_at
+            """,
+            rows,
+        )
+    return {"status": "saved"}, 201
+
+
 @app.post("/api/notify")
 def notify():
     if request.headers.get("X-Cron-Secret") != CRON_SECRET:
@@ -112,9 +193,16 @@ def daily_check():
     if request.headers.get("X-Cron-Secret") != CRON_SECRET:
         return {"error": "unauthorized"}, 401
 
-    # TODO: pull data from the database, compute/decide what to say here.
-    # For now this just proves the scheduled trigger reaches a real push.
-    sent = send_push("Daily Check", "This is your scheduled daily check-in.")
+    today = date.today().isoformat()
+    with get_habits_db() as conn:
+        already_logged = conn.execute(
+            "SELECT 1 FROM metric_entries WHERE entry_date = ? LIMIT 1",
+            (today,),
+        ).fetchone()
+    if already_logged:
+        return {"sent": 0, "skipped": "already logged today"}
+
+    sent = send_push("Daily Check-in", "Don't forget to log today's habits.")
     return {"sent": sent}
 
 
