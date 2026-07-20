@@ -78,11 +78,13 @@
       color: #4a5568;
       margin-bottom: 1rem;
     }
-    .habit-field input {
+    .habit-field input, .habit-field textarea {
       font-size: 1rem;
       padding: 0.6rem 0.75rem;
       border: 1px solid #cbd5e0;
       border-radius: 8px;
+      font-family: inherit;
+      resize: vertical;
     }
     .habit-actions { display: flex; gap: 0.75rem; margin-top: 0.5rem; }
     .habit-actions button { flex: 1; padding: 0.75rem; border-radius: 8px; border: none; font-size: 1rem; cursor: pointer; }
@@ -219,6 +221,7 @@
     const habitFieldsEl = document.getElementById('habit-fields');
     const habitSkipBtn = document.getElementById('habit-skip-btn');
     const habitSaveBtn = habitForm.querySelector('button[type="submit"]');
+    let habitFieldsByKey = {};
 
     async function initHabitPrompt() {
       try {
@@ -232,12 +235,15 @@
         const { fields } = await fieldsRes.json();
         if (!fields.length) return;
 
-        habitFieldsEl.innerHTML = fields.map(f => `
-          <label class="habit-field">
-            ${f.label}
-            <input name="${f.key}" type="${f.type === 'number' ? 'number' : 'text'}" step="any" required>
-          </label>
-        `).join('');
+        habitFieldsByKey = Object.fromEntries(fields.map(f => [f.key, f]));
+
+        habitFieldsEl.innerHTML = fields.map(f => {
+          const required = f.required !== false;
+          const input = f.type === 'number'
+            ? `<input name="${f.key}" type="number" step="any" ${required ? 'required' : ''}>`
+            : `<textarea name="${f.key}" rows="3" ${required ? 'required' : ''}></textarea>`;
+          return `<label class="habit-field">${f.label}${input}</label>`;
+        }).join('');
 
         habitModal.style.display = 'flex';
       } catch (err) {
@@ -249,7 +255,12 @@
       e.preventDefault();
       const metrics = {};
       for (const [key, value] of new FormData(habitForm).entries()) {
-        metrics[key] = Number(value);
+        const field = habitFieldsByKey[key];
+        if (field.type === 'number') {
+          metrics[key] = Number(value);
+        } else if (value.trim() !== '') {
+          metrics[key] = value;
+        }
       }
 
       habitSaveBtn.disabled = true;

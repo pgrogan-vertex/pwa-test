@@ -19,10 +19,12 @@ VAPID_PUBLIC_KEY = os.environ["VAPID_PUBLIC_KEY"]
 VAPID_CLAIM_EMAIL = os.environ["VAPID_CLAIM_EMAIL"]
 CRON_SECRET = os.environ["CRON_SECRET"]
 
-# Placeholder metric - swap/extend once real habit fields are decided.
+# Add a numeric field here any time there's a new metric to track day-to-day.
 HABIT_FIELDS = [
     {"key": "sleep_hours", "label": "Sleep (hours)", "type": "number"},
+    {"key": "notes", "label": "Notes", "type": "text", "required": False},
 ]
+HABIT_FIELDS_BY_KEY = {field["key"]: field for field in HABIT_FIELDS}
 
 
 def get_habits_db():
@@ -153,13 +155,18 @@ def save_habits():
     if not isinstance(metrics, dict) or not metrics:
         return {"error": "invalid metrics"}, 400
 
-    valid_keys = {field["key"] for field in HABIT_FIELDS}
     today = date.today().isoformat()
     recorded_at = datetime.utcnow().isoformat()
 
     rows = []
     for key, value in metrics.items():
-        if key not in valid_keys or isinstance(value, bool) or not isinstance(value, (int, float)):
+        field = HABIT_FIELDS_BY_KEY.get(key)
+        if field is None:
+            return {"error": f"invalid metric: {key}"}, 400
+        if field["type"] == "number":
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                return {"error": f"invalid metric: {key}"}, 400
+        elif not isinstance(value, str):
             return {"error": f"invalid metric: {key}"}, 400
         rows.append((today, key, value, recorded_at))
 
