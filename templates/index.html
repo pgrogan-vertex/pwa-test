@@ -102,6 +102,9 @@
     <span class="status" id="sw-status">Checking service worker…</span>
     <button id="install-btn">Add to Home Screen</button>
     <button id="notify-btn">Enable Notifications</button>
+    <p id="habit-status" style="display:none; font-size:0.85rem; color:#718096; margin-top:0.75rem;">
+      Today logged &#10003; &mdash; <a href="#" id="habit-edit-link">edit</a>
+    </p>
   </div>
 
   <div class="modal-overlay" id="habit-modal">
@@ -221,35 +224,58 @@
     const habitFieldsEl = document.getElementById('habit-fields');
     const habitSkipBtn = document.getElementById('habit-skip-btn');
     const habitSaveBtn = habitForm.querySelector('button[type="submit"]');
+    const habitStatusEl = document.getElementById('habit-status');
+    const habitEditLink = document.getElementById('habit-edit-link');
     let habitFieldsByKey = {};
+    let habitFields = [];
+
+    function renderHabitForm() {
+      habitFieldsEl.innerHTML = habitFields.map(f => {
+        const required = f.required !== false;
+        const input = f.type === 'number'
+          ? `<input name="${f.key}" type="number" step="any" ${required ? 'required' : ''}>`
+          : `<textarea name="${f.key}" rows="3" ${required ? 'required' : ''}></textarea>`;
+        return `<label class="habit-field">${f.label}${input}</label>`;
+      }).join('');
+    }
 
     async function initHabitPrompt() {
       try {
         const todayRes = await fetch('/api/habits/today');
         if (!todayRes.ok) return;
         const { logged } = await todayRes.json();
-        if (logged) return;
 
         const fieldsRes = await fetch('/api/habits/fields');
         if (!fieldsRes.ok) return;
-        const { fields } = await fieldsRes.json();
-        if (!fields.length) return;
+        ({ fields: habitFields } = await fieldsRes.json());
+        if (!habitFields.length) return;
+        habitFieldsByKey = Object.fromEntries(habitFields.map(f => [f.key, f]));
 
-        habitFieldsByKey = Object.fromEntries(fields.map(f => [f.key, f]));
+        if (logged) {
+          habitStatusEl.style.display = 'block';
+          return;
+        }
 
-        habitFieldsEl.innerHTML = fields.map(f => {
-          const required = f.required !== false;
-          const input = f.type === 'number'
-            ? `<input name="${f.key}" type="number" step="any" ${required ? 'required' : ''}>`
-            : `<textarea name="${f.key}" rows="3" ${required ? 'required' : ''}></textarea>`;
-          return `<label class="habit-field">${f.label}${input}</label>`;
-        }).join('');
-
+        renderHabitForm();
         habitModal.style.display = 'flex';
       } catch (err) {
         console.error('Habit prompt init failed:', err);
       }
     }
+
+    habitEditLink.addEventListener('click', async e => {
+      e.preventDefault();
+      if (!confirm("Delete today's entry and re-enter it from scratch?")) return;
+      try {
+        const res = await fetch('/api/habits/today', { method: 'DELETE' });
+        if (!res.ok) throw new Error(`delete failed: ${res.status}`);
+        habitStatusEl.style.display = 'none';
+        renderHabitForm();
+        habitModal.style.display = 'flex';
+      } catch (err) {
+        console.error('Habit delete failed:', err);
+      }
+    });
 
     habitForm.addEventListener('submit', async e => {
       e.preventDefault();

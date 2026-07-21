@@ -195,6 +195,14 @@ def save_habits():
     return {"status": "saved"}, 201
 
 
+@app.delete("/api/habits/today")
+def delete_today_habits():
+    today = date.today().isoformat()
+    with get_habits_db() as conn:
+        conn.execute("DELETE FROM daily_entries WHERE entry_date = ?", (today,))
+    return {"status": "deleted"}
+
+
 @app.post("/api/notify")
 def notify():
     if request.headers.get("X-Cron-Secret") != CRON_SECRET:
