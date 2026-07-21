@@ -35,18 +35,22 @@ def get_habits_db():
 
 
 def init_habits_db():
+    """One row per day (entry_date PRIMARY KEY), one column per HABIT_FIELDS entry.
+    Missing columns are added on startup - existing rows get NULL for anything new."""
     with get_habits_db() as conn:
         conn.execute(
             """
-            CREATE TABLE IF NOT EXISTS metric_entries (
-                entry_date TEXT NOT NULL,
-                metric_key TEXT NOT NULL,
-                metric_value NUMERIC NOT NULL,
-                recorded_at TEXT NOT NULL,
-                UNIQUE(entry_date, metric_key)
+            CREATE TABLE IF NOT EXISTS daily_entries (
+                entry_date TEXT PRIMARY KEY,
+                recorded_at TEXT NOT NULL
             )
             """
         )
+        existing_columns = {row["name"] for row in conn.execute("PRAGMA table_info(daily_entries)")}
+        for field in HABIT_FIELDS:
+            if field["key"] not in existing_columns:
+                column_type = "NUMERIC" if field["type"] == "number" else "TEXT"
+                conn.execute(f'ALTER TABLE daily_entries ADD COLUMN "{field["key"]}" {column_type}')
 
 
 init_habits_db()
@@ -140,12 +144,15 @@ def habit_fields():
 def habits_today():
     today = date.today().isoformat()
     with get_habits_db() as conn:
-        rows = conn.execute(
-            "SELECT metric_key, metric_value FROM metric_entries WHERE entry_date = ?",
-            (today,),
-        ).fetchall()
-    metrics = {row["metric_key"]: row["metric_value"] for row in rows}
-    return {"logged": bool(metrics), "metrics": metrics}
+        row = conn.execute("SELECT * FROM daily_entries WHERE entry_date = ?", (today,)).fetchone()
+    if row is None:
+        return {"logged": False, "metrics": {}}
+    metrics = {
+        key: row[key]
+        for key in row.keys()
+        if key not in ("entry_date", "recorded_at") and row[key] is not None
+    }
+    return {"logged": True, "metrics": metrics}
 
 
 @app.post("/api/habits")
@@ -155,10 +162,6 @@ def save_habits():
     if not isinstance(metrics, dict) or not metrics:
         return {"error": "invalid metrics"}, 400
 
-    today = date.today().isoformat()
-    recorded_at = datetime.utcnow().isoformat()
-
-    rows = []
     for key, value in metrics.items():
         field = HABIT_FIELDS_BY_KEY.get(key)
         if field is None:
@@ -168,18 +171,26 @@ def save_habits():
                 return {"error": f"invalid metric: {key}"}, 400
         elif not isinstance(value, str):
             return {"error": f"invalid metric: {key}"}, 400
-        rows.append((today, key, value, recorded_at))
+
+    today = date.today().isoformat()
+    recorded_at = datetime.utcnow().isoformat()
+
+    # Column names come from HABIT_FIELDS_BY_KEY (validated above), not user input, so
+    # interpolating them into the SQL string here is safe from injection.
+    columns = ["entry_date", "recorded_at"] + list(metrics.keys())
+    placeholders = ", ".join("?" for _ in columns)
+    column_list = ", ".join(f'"{c}"' for c in columns)
+    update_clause = ", ".join(f'"{k}" = excluded."{k}"' for k in ["recorded_at", *metrics.keys()])
+    values = [today, recorded_at] + list(metrics.values())
 
     with get_habits_db() as conn:
-        conn.executemany(
-            """
-            INSERT INTO metric_entries (entry_date, metric_key, metric_value, recorded_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(entry_date, metric_key) DO UPDATE SET
-                metric_value = excluded.metric_value,
-                recorded_at = excluded.recorded_at
+        conn.execute(
+            f"""
+            INSERT INTO daily_entries ({column_list})
+            VALUES ({placeholders})
+            ON CONFLICT(entry_date) DO UPDATE SET {update_clause}
             """,
-            rows,
+            values,
         )
     return {"status": "saved"}, 201
 
@@ -203,7 +214,7 @@ def daily_check():
     today = date.today().isoformat()
     with get_habits_db() as conn:
         already_logged = conn.execute(
-            "SELECT 1 FROM metric_entries WHERE entry_date = ? LIMIT 1",
+            "SELECT 1 FROM daily_entries WHERE entry_date = ? LIMIT 1",
             (today,),
         ).fetchone()
     if already_logged:

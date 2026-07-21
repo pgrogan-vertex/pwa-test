@@ -8,7 +8,7 @@ from pathlib import Path
 HABITS_DB = Path(os.environ.get("DATA_DIR", ".")) / "habits.db"
 
 conn = sqlite3.connect(HABITS_DB)
-cols = [d[0] for d in conn.execute("SELECT * FROM metric_entries").description]
+cols = [d[0] for d in conn.execute("SELECT * FROM daily_entries").description]
 print(f"{HABITS_DB} — columns: {cols}")
-for row in conn.execute("SELECT * FROM metric_entries ORDER BY entry_date, metric_key").fetchall():
+for row in conn.execute("SELECT * FROM daily_entries ORDER BY entry_date").fetchall():
     print(tuple(row))
