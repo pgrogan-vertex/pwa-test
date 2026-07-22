@@ -2,3 +2,4 @@ flask
 gunicorn
 pywebpush
 python-dotenv
+tzdata

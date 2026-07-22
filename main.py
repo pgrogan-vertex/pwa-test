@@ -1,8 +1,9 @@
 import json
 import os
 import sqlite3
-from datetime import date, datetime
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from flask import Flask, render_template, request, send_from_directory
@@ -11,6 +12,10 @@ from pywebpush import webpush, WebPushException
 load_dotenv()
 
 app = Flask(__name__)
+
+# All "today" boundaries use this instead of UTC (the server's clock) so logging
+# habits late in the evening doesn't get stamped with tomorrow's date.
+LOCAL_TZ = ZoneInfo("America/New_York")
 
 SUBSCRIPTIONS_FILE = Path(os.environ.get("DATA_DIR", ".")) / "subscriptions.json"
 HABITS_DB = Path(os.environ.get("DATA_DIR", ".")) / "habits.db"
@@ -142,7 +147,7 @@ def habit_fields():
 
 @app.get("/api/habits/today")
 def habits_today():
-    today = date.today().isoformat()
+    today = datetime.now(LOCAL_TZ).date().isoformat()
     with get_habits_db() as conn:
         row = conn.execute("SELECT * FROM daily_entries WHERE entry_date = ?", (today,)).fetchone()
     if row is None:
@@ -172,7 +177,7 @@ def save_habits():
         elif not isinstance(value, str):
             return {"error": f"invalid metric: {key}"}, 400
 
-    today = date.today().isoformat()
+    today = datetime.now(LOCAL_TZ).date().isoformat()
     recorded_at = datetime.utcnow().isoformat()
 
     # Column names come from HABIT_FIELDS_BY_KEY (validated above), not user input, so
@@ -197,7 +202,7 @@ def save_habits():
 
 @app.delete("/api/habits/today")
 def delete_today_habits():
-    today = date.today().isoformat()
+    today = datetime.now(LOCAL_TZ).date().isoformat()
     with get_habits_db() as conn:
         conn.execute("DELETE FROM daily_entries WHERE entry_date = ?", (today,))
     return {"status": "deleted"}
@@ -219,7 +224,7 @@ def daily_check():
     if request.headers.get("X-Cron-Secret") != CRON_SECRET:
         return {"error": "unauthorized"}, 401
 
-    today = date.today().isoformat()
+    today = datetime.now(LOCAL_TZ).date().isoformat()
     with get_habits_db() as conn:
         already_logged = conn.execute(
             "SELECT 1 FROM daily_entries WHERE entry_date = ? LIMIT 1",
