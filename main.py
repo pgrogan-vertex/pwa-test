@@ -77,6 +77,7 @@ def send_push(title, body):
     still_valid = []
     sent = 0
     for subscription in subscriptions:
+        endpoint = subscription.get("endpoint", "<unknown>")
         try:
             webpush(
                 subscription_info=subscription,
@@ -88,8 +89,13 @@ def send_push(title, body):
             )
             still_valid.append(subscription)
             sent += 1
-        except WebPushException:
-            pass  # subscription expired or invalid; drop it
+        except WebPushException as exc:
+            app.logger.warning("Push failed, dropping subscription %s: %s", endpoint, exc)
+        except Exception:
+            # Not a subscription-specific failure (e.g. malformed VAPID key data) - keep the
+            # subscription and move on instead of letting it kill the rest of the batch.
+            app.logger.exception("Unexpected error sending push to %s; keeping subscription", endpoint)
+            still_valid.append(subscription)
 
     save_subscriptions(still_valid)
     return sent
