@@ -2,8 +2,8 @@ Scaffolding backlog
 ====================
 Tabled for now (2026-07-18) - not urgent, revisit when they start to hurt.
 
-- [ ] Health-check route. Railway/uptime tools currently have nothing
-      cheap to poll; `/` renders a full template just to check liveness.
+- [x] Health-check route. DONE 2026-07-23. GET /healthz returns
+      {"status": "ok"} with no template render or DB hit.
 
 - [ ] Automated tests. No test suite exists yet - nothing catches
       regressions as the app grows (e.g. subscribe validation, notify
@@ -51,11 +51,9 @@ Tabled for now (2026-07-18) - not urgent, revisit when they start to hurt.
       an edit affordance ("Today logged - edit") when it's already
       logged.
 
-      Still open: whether /api/habits/* endpoints need auth (currently
-      none, unlike the cron endpoints' X-Cron-Secret). See "Auth" under
-      UI Design Decisions below - a site-wide gate would likely resolve
-      both at once, so track them together rather than deciding this in
-      isolation.
+      Auth question resolved 2026-07-23 - see "Auth" under UI Design
+      Decisions below. /api/habits/* now requires a logged-in session,
+      same site-wide gate as everything else.
 
 UI Design Decisions TODO
 ==========================
@@ -76,11 +74,22 @@ URLs, back button, bookmarkable) rather than show/hide divs in one page.
       still means bumping CACHE, same as every habit-modal change did
       this session.
 
-- [ ] Auth. The Railway URL is public with zero login right now - fine
-      for hello-world, less fine once it holds personal stats/config.
-      Decide whether a lightweight password gate belongs on this app.
-      Would likely also settle the open /api/habits/* auth question in
-      the Scaffolding backlog section above - decide both together.
+- [x] Auth. DONE 2026-07-23. Single shared password (SITE_PASSWORD env
+      var), checked via a login form that sets a signed Flask session
+      cookie (SECRET_KEY env var, 30-day lifetime). GET /login and
+      POST /login (login.html), POST /logout. A before_request hook in
+      main.py gates everything except /login, /healthz, /sw.js,
+      /static/*, and the two X-Cron-Secret-protected job endpoints
+      (/api/notify, /api/jobs/daily-check - those stay header-authed
+      since they're hit by cron, not a browser session). This also
+      resolved the /api/habits/* auth question above.
+
+      Known gap, not fixed: static/sw.js caches '/' cache-first. After
+      a logout on a device that previously cached '/' while logged in,
+      that cached copy can still be served offline instead of hitting
+      the network and redirecting to /login. Not addressed - fine for
+      a single-user hobby app, but worth knowing if this ever needs to
+      hold more sensitive data.
 
 - [ ] Where settings live. Server-side in SQLite (like habits.db -
       follows you across devices, needs a table/endpoints) vs.

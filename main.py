@@ -1,17 +1,20 @@
+import hmac
 import json
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
-from flask import Flask, render_template, request, send_from_directory
+from flask import Flask, redirect, render_template, request, send_from_directory, session, url_for
 from pywebpush import webpush, WebPushException
 
 load_dotenv()
 
 app = Flask(__name__)
+app.secret_key = os.environ["SECRET_KEY"]
+app.permanent_session_lifetime = timedelta(days=30)
 
 # All "today" boundaries use this instead of UTC (the server's clock) so logging
 # habits late in the evening doesn't get stamped with tomorrow's date.
@@ -23,6 +26,24 @@ VAPID_PRIVATE_KEY = os.environ["VAPID_PRIVATE_KEY"]
 VAPID_PUBLIC_KEY = os.environ["VAPID_PUBLIC_KEY"]
 VAPID_CLAIM_EMAIL = os.environ["VAPID_CLAIM_EMAIL"]
 CRON_SECRET = os.environ["CRON_SECRET"]
+SITE_PASSWORD = os.environ["SITE_PASSWORD"]
+
+# Routes reachable without a logged-in session: the login page itself, the health check
+# (Railway/uptime polling), the service worker script, and the cron-secret-protected job
+# endpoints (those authenticate via X-Cron-Secret, not a browser session).
+PUBLIC_PATHS = {"/login", "/healthz", "/sw.js"}
+CRON_PATHS = {"/api/notify", "/api/jobs/daily-check"}
+
+
+@app.before_request
+def require_auth():
+    if request.path.startswith("/static/") or request.path in PUBLIC_PATHS or request.path in CRON_PATHS:
+        return
+    if session.get("authenticated"):
+        return
+    if request.path.startswith("/api/"):
+        return {"error": "unauthorized"}, 401
+    return redirect(url_for("login", next=request.path))
 
 # Add a numeric field here any time there's a new metric to track day-to-day.
 HABIT_FIELDS = [
@@ -106,6 +127,27 @@ def root():
     return render_template("index.html")
 
 
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "GET":
+        return render_template("login.html", error=None)
+
+    password = request.form.get("password", "")
+    if not hmac.compare_digest(password, SITE_PASSWORD):
+        return render_template("login.html", error="Incorrect password"), 401
+
+    session.clear()
+    session["authenticated"] = True
+    session.permanent = True
+    return redirect(request.args.get("next") or url_for("root"))
+
+
+@app.post("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
 @app.get("/sw.js")
 def service_worker():
     # Served from the root (not /static/) so its default scope covers the whole site.
@@ -115,6 +157,11 @@ def service_worker():
 @app.get("/api/hello")
 def hello():
     return {"message": "Hello from Flask!"}
+
+
+@app.get("/healthz")
+def healthz():
+    return {"status": "ok"}
 
 
 @app.get("/api/vapid-public-key")
