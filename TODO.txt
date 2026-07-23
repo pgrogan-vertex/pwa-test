@@ -9,67 +9,85 @@ Tabled for now (2026-07-18) - not urgent, revisit when they start to hurt.
       regressions as the app grows (e.g. subscribe validation, notify
       auth, health check would be a reasonable first batch).
 
-- [ ] Log push failures instead of dropping silently. send_push() in
-      main.py catches WebPushException and just removes the subscription
-      with no log line - no visibility if pushes start failing broadly.
+- [x] Log push failures instead of dropping silently. DONE 2026-07-22
+      (commit 5626bfe). send_push() now logs a warning (with endpoint)
+      when a subscription fails and gets dropped.
 
-- [ ] send_push() only catches WebPushException. Other exceptions from
-      webpush() (e.g. malformed VAPID key data) still propagate as an
-      unhandled 500 instead of being caught/logged like the expected
-      failure case.
+- [x] send_push() only catches WebPushException. DONE 2026-07-22, same
+      commit as above. Other exceptions (e.g. malformed VAPID key data)
+      are now caught and logged per-subscription instead of propagating
+      out of the loop and silently failing delivery to every other
+      subscriber too.
 
-- [ ] Habit-tracking daily checkup. Prompt to log habit metrics (eating,
-      sleep, etc.) daily, store them, analyze statistically over time.
-      Resolves the TODO already sitting in daily_check() at main.py:115
-      ("pull data from the database, compute/decide what to say here").
-      Fields themselves are undecided/TBD - architecture below assumes
-      config-driven fields, not a fixed set.
+- [x] Habit-tracking daily checkup. DONE - daily logging loop is fully
+      shipped and in use. Resolved the TODO that was sitting in
+      daily_check() at main.py ("pull data from the database,
+      compute/decide what to say here").
 
-      Architecture (agreed 2026-07-19, no code written yet):
+      What shipped (diverged from the original plan - see below):
+      SQLite (DATA_DIR/habits.db) with a wide `daily_entries` table -
+      one row per day, one column per HABIT_FIELDS entry, added via
+      ALTER TABLE at startup (commit 5d3f225). Originally scoped as an
+      EAV `metric_entries` table; switched to the wide table for
+      simplicity at this scale. Fields (config-driven via HABIT_FIELDS
+      in main.py, no longer TBD): sleep_hours (number), notes (optional
+      text) - type-based validation generalized in commit 50f2e75.
 
-      Storage: DATA_DIR/habits.db via stdlib sqlite3 (no new dependency),
-      same volume/env-var pattern as SUBSCRIPTIONS_FILE (main.py:13).
-      Schema via CREATE TABLE IF NOT EXISTS at startup, no migration
-      framework - consistent with this repo's scale. Set
-      `PRAGMA journal_mode=WAL` at connection time since gunicorn may run
-      multiple workers/threads.
+      API shipped: GET /api/habits/fields, GET /api/habits/today,
+      POST /api/habits (upsert), DELETE /api/habits/today (edit flow,
+      commit 95eb6c7). The originally-planned GET /api/habits?start=&end=
+      range-query/stats endpoint was dropped - 2026-07-22 decision to
+      explore the data directly in Jupyter instead of building a stats
+      API/view.
 
-      Data model: EAV, not a JSON blob column -
-        metric_entries(entry_date TEXT, metric_key TEXT,
-                        metric_value NUMERIC, recorded_at TEXT,
-                        UNIQUE(entry_date, metric_key))
-      Chosen over a JSON-per-day column because plain SQL aggregates
-      (AVG/GROUP BY on metric_key) are the whole point of "analyze
-      statistically," and EAV keeps that simple on SQLite. New metrics
-      later are just new metric_key values - no schema change.
+      Reminder tie-in: /api/jobs/daily-check skips the push if today's
+      already logged. DONE 2026-07-19. Had a real bug where the "today"
+      check used server UTC instead of US/Eastern, so logging late
+      evening could pre-emptively mark the next day as done - fixed
+      2026-07-22 (commit b3106ec) via zoneinfo(America/New_York).
 
-      API surface:
-        GET  /api/habits/fields  - metric definitions (key, label, type);
-                                    single source of truth the frontend
-                                    form is built from
-        GET  /api/habits/today   - { logged: bool, metrics: {...} }
-        POST /api/habits         - upsert today's metric rows
-        GET  /api/habits?start=&end= - range query for a future stats view
+      In-app prompt: DONE. index.html shows a modal built from
+      /api/habits/fields when /api/habits/today reports not logged, with
+      an edit affordance ("Today logged - edit") when it's already
+      logged.
 
-      Reminder: repurpose /api/jobs/daily-check (main.py:191-205) rather
-      than a second cron service - skip the push if today's already
-      logged, change the message to a habit-log prompt. DONE 2026-07-19.
+      Still open: whether /api/habits/* endpoints need auth (currently
+      none, unlike the cron endpoints' X-Cron-Secret). See "Auth" under
+      UI Design Decisions below - a site-wide gate would likely resolve
+      both at once, so track them together rather than deciding this in
+      isolation.
 
-      In-app prompt: on load, index.html's script calls
-      /api/habits/today; if logged is false, show a modal built from
-      /api/habits/fields.
+UI Design Decisions TODO
+==========================
+Raised 2026-07-21, ahead of building out multiple screens (settings,
+stats, etc.) beyond the current single index.html page. Decided:
+multi-screen navigation will use separate Flask routes/templates (real
+URLs, back button, bookmarkable) rather than show/hide divs in one page.
 
-      Open questions / considerations:
-        - metric_value is NUMERIC-only for now. Need a value_type or
-          separate text-value column if a non-numeric field (e.g. a
-          free-text note) ends up wanted - decide once actual fields
-          are picked.
-        - Railway volume cap is 500MB on the current (trial) plan
-          (confirmed via `railway volume list`, 32MB used as of
-          2026-07-19). Not a near-term concern for small daily numeric
-          rows, but worth knowing the ceiling exists if the plan doesn't
-          change.
-        - No decision yet on whether /api/habits endpoints need auth
-          (existing /api/notify and /api/jobs/daily-check use
-          X-Cron-Secret; habits endpoints are user-facing, not
-          cron-facing, so that pattern may not directly apply).
+- [ ] Shared layout. Pull common chrome (styles, nav, SW registration
+      script) into a Jinja base template (`{% extends %}`) instead of
+      copy-pasting the <style> block and boilerplate JS into every new
+      page.
+
+- [ ] Service worker shell list. static/sw.js's SHELL array and
+      cache-first strategy only cover '/' right now. New routes like
+      /settings need to be added to SHELL (for offline access) or
+      deliberately left network-only. Remember: any template change
+      still means bumping CACHE, same as every habit-modal change did
+      this session.
+
+- [ ] Auth. The Railway URL is public with zero login right now - fine
+      for hello-world, less fine once it holds personal stats/config.
+      Decide whether a lightweight password gate belongs on this app.
+      Would likely also settle the open /api/habits/* auth question in
+      the Scaffolding backlog section above - decide both together.
+
+- [ ] Where settings live. Server-side in SQLite (like habits.db -
+      follows you across devices, needs a table/endpoints) vs.
+      client-side in localStorage (zero backend, but per-device/
+      per-browser only, same limitation as the current push
+      subscription).
+
+- [ ] Mobile-first chrome. Pick one navigation pattern (bottom nav for
+      thumb reach vs. top nav) and account for safe-area insets
+      (notches) and touch target sizing once, rather than per-screen.
