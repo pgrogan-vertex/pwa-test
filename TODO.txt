@@ -62,10 +62,17 @@ stats, etc.) beyond the current single index.html page. Decided:
 multi-screen navigation will use separate Flask routes/templates (real
 URLs, back button, bookmarkable) rather than show/hide divs in one page.
 
-- [ ] Shared layout. Pull common chrome (styles, nav, SW registration
-      script) into a Jinja base template (`{% extends %}`) instead of
-      copy-pasting the <style> block and boilerplate JS into every new
-      page.
+- [x] Shared layout. DONE 2026-07-23. templates/base.html holds the
+      shared head boilerplate, base CSS (reset, body, .card, h1, p),
+      and the service worker registration call
+      (window.swRegistration = navigator.serviceWorker.register(...)).
+      index.html and login.html now {% extends "base.html" %}, using
+      title/extra_style/content/extra_script blocks for what's
+      page-specific. index.html's status UI chains off
+      window.swRegistration instead of registering the SW itself.
+      Bumped static/sw.js CACHE to v9 since '/' output changed.
+      Verified via curl (couldn't check visually - no browser tool
+      connected this session); worth a manual look post-deploy.
 
 - [ ] Service worker shell list. static/sw.js's SHELL array and
       cache-first strategy only cover '/' right now. New routes like

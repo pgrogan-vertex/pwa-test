@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#4a90d9">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="HelloPWA">
+  <link rel="apple-touch-icon" href="/static/icon.svg">
+  <link rel="manifest" href="/static/manifest.json">
+  <title>{% block title %}Hello World PWA{% endblock %}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #f0f4f8;
+      color: #1a202c;
+      padding: 1rem;
+    }
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 2.5rem 3rem;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      text-align: center;
+      max-width: 400px;
+      width: 100%;
+    }
+    h1 { font-size: 2rem; color: #4a90d9; margin-bottom: 0.5rem; }
+    p  { color: #718096; margin-bottom: 1.5rem; line-height: 1.6; }
+    {% block extra_style %}{% endblock %}
+  </style>
+</head>
+<body>
+  {% block content %}{% endblock %}
+
+  <script>
+    // Service worker registration, shared by every page. Page scripts that need to know
+    // when it's ready (e.g. to show status) can chain off window.swRegistration.
+    if ('serviceWorker' in navigator) {
+      window.swRegistration = navigator.serviceWorker.register('/sw.js');
+    }
+  </script>
+  {% block extra_script %}{% endblock %}
+</body>
+</html>
