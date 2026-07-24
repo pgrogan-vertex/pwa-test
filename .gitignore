@@ -7,3 +7,6 @@ claude_random/
 subscriptions.json
 habits.db*
 notify_test
+.claude/settings.local.json
+.pytest_cache/
+SESSION

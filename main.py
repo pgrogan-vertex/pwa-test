@@ -2,7 +2,7 @@ import hmac
 import json
 import os
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -231,7 +231,7 @@ def save_habits():
             return {"error": f"invalid metric: {key}"}, 400
 
     today = datetime.now(LOCAL_TZ).date().isoformat()
-    recorded_at = datetime.utcnow().isoformat()
+    recorded_at = datetime.now(timezone.utc).isoformat()
 
     # Column names come from HABIT_FIELDS_BY_KEY (validated above), not user input, so
     # interpolating them into the SQL string here is safe from injection.
