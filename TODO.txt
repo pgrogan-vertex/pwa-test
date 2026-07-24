@@ -1,3 +1,30 @@
+Next up
+========
+Bookmarked 2026-07-24, end of a session that closed out the whole
+scaffolding backlog + UI Design Decisions list below (health check,
+auth, shared layout, SW fix, tests, housekeeping - all done).
+
+Decided direction for actual feature work: a "personal automation
+hub" - generalize the existing cron -> /api/jobs/daily-check ->
+send_push() pattern into a generic trigger -> rule -> action pipeline,
+so new automations (iOS Shortcuts, Tasker, scripts, scheduled jobs)
+are a DB row instead of a new bespoke endpoint each time. This was
+basically the original motivation for the whole project.
+
+Schema + route sketch (not yet implemented) saved in
+claude_random/automation_hub_schema: `automations`, `automation_events`
+(generic timestamped log, decoupled from the habit day-table schema on
+purpose), `automation_runs` (execution log, since these fire
+unattended). Open questions noted there: secret via header vs. query
+param, how scheduled automations would layer on top of the existing
+Railway-cron pattern, no rule-editing UI planned yet (rows inserted
+directly, same spirit as HABIT_FIELDS being code-level config).
+
+Explicitly deferred, not forgotten: stats/streaks screen (IDEAS.txt) -
+holding off until habit fields actually being tracked are decided and
+some analysis is done directly against the data first, rather than
+building a stats UI before knowing what it needs to show.
+
 Scaffolding backlog
 ====================
 Tabled for now (2026-07-18) - not urgent, revisit when they start to hurt.
