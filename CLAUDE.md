@@ -17,7 +17,12 @@ python main.py            # dev server, or:
 gunicorn main:app --bind 0.0.0.0:8000
 ```
 
-There is no test suite or linter configured in this repo yet.
+Run tests:
+```
+pip install -r requirements-dev.txt
+pytest
+```
+Tests live in `tests/`, with fixtures in `conftest.py` (a fresh Flask app + isolated temp `DATA_DIR` per test, since `main.py` reads config and opens the habits DB at import time). There is no linter configured in this repo yet.
 
 ## Deployment
 

@@ -5,9 +5,19 @@ Tabled for now (2026-07-18) - not urgent, revisit when they start to hurt.
 - [x] Health-check route. DONE 2026-07-23. GET /healthz returns
       {"status": "ok"} with no template render or DB hit.
 
-- [ ] Automated tests. No test suite exists yet - nothing catches
-      regressions as the app grows (e.g. subscribe validation, notify
-      auth, health check would be a reasonable first batch).
+- [x] Automated tests. DONE 2026-07-23. pytest suite in tests/,
+      conftest.py fixtures give each test a fresh Flask app + isolated
+      temp DATA_DIR (main.py reads config and opens the habits DB at
+      import time, so the fixture reloads the module after setting env
+      vars rather than just constructing a client). 33 tests covering:
+      /healthz, the auth gate (redirect/401 split, login/logout,
+      public vs. cron-secret vs. session-gated paths), /api/subscribe
+      validation, /api/notify, and the full /api/habits/* + daily-check
+      flow. requirements-dev.txt added (pytest on top of
+      requirements.txt) so prod deps on Railway stay untouched.
+
+      Surfaced in passing, not fixed: main.py:234 uses the deprecated
+      datetime.utcnow() for recorded_at in save_habits().
 
 - [x] Log push failures instead of dropping silently. DONE 2026-07-22
       (commit 5626bfe). send_push() now logs a warning (with endpoint)
