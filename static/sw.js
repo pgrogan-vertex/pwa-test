@@ -1,4 +1,4 @@
-const CACHE = 'hello-pwa-v9';
+const CACHE = 'hello-pwa-v10';
 const SHELL = ['/', '/static/manifest.json', '/sw.js'];
 
 self.addEventListener('install', event => {
@@ -18,9 +18,9 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
-  // Cache-first for shell assets, network-first for API calls
   const url = new URL(event.request.url);
   if (url.pathname.startsWith('/api/')) {
+    // Network-first, JSON offline fallback.
     event.respondWith(
       fetch(event.request).catch(() =>
         new Response(JSON.stringify({ error: 'offline' }), {
@@ -28,7 +28,22 @@ self.addEventListener('fetch', event => {
         })
       )
     );
+  } else if (event.request.mode === 'navigate') {
+    // Page loads (/, /login, ...) carry session-dependent state, so always prefer a
+    // live fetch - a stale cached page could otherwise silently bypass the auth
+    // check. The cache is only an offline fallback, refreshed on every successful
+    // navigation.
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          const copy = response.clone();
+          caches.open(CACHE).then(cache => cache.put(event.request, copy));
+          return response;
+        })
+        .catch(() => caches.match(event.request).then(cached => cached || caches.match('/')))
+    );
   } else {
+    // Static shell assets - fine to serve cache-first.
     event.respondWith(
       caches.match(event.request).then(cached => cached || fetch(event.request))
     );

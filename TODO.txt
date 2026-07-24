@@ -74,12 +74,14 @@ URLs, back button, bookmarkable) rather than show/hide divs in one page.
       Verified via curl (couldn't check visually - no browser tool
       connected this session); worth a manual look post-deploy.
 
-- [ ] Service worker shell list. static/sw.js's SHELL array and
-      cache-first strategy only cover '/' right now. New routes like
-      /settings need to be added to SHELL (for offline access) or
-      deliberately left network-only. Remember: any template change
-      still means bumping CACHE, same as every habit-modal change did
-      this session.
+- [x] Service worker shell list. DONE 2026-07-23, forced by a real bug
+      (see below): navigations (mode === 'navigate', i.e. '/', '/login',
+      and any future page route) are now network-first with the cache
+      only as an offline fallback, refreshed on every successful fetch.
+      True static assets (manifest.json, sw.js itself) stay cache-first.
+      This answers the original SHELL question for every future route
+      automatically - no per-route decision needed, and no more relying
+      on remembering to bump CACHE for session-dependent pages.
 
 - [x] Auth. DONE 2026-07-23. Single shared password (SITE_PASSWORD env
       var), checked via a login form that sets a signed Flask session
@@ -91,12 +93,15 @@ URLs, back button, bookmarkable) rather than show/hide divs in one page.
       since they're hit by cron, not a browser session). This also
       resolved the /api/habits/* auth question above.
 
-      Known gap, not fixed: static/sw.js caches '/' cache-first. After
-      a logout on a device that previously cached '/' while logged in,
-      that cached copy can still be served offline instead of hitting
-      the network and redirecting to /login. Not addressed - fine for
-      a single-user hobby app, but worth knowing if this ever needs to
-      hold more sensitive data.
+      Known gap flagged here turned into a real bug the same day: cache-
+      first '/' meant a device with a pre-auth cached page kept loading
+      that stale copy - never hitting the network, never carrying a
+      session cookie - so its API calls (including the vapid-public-key
+      fetch behind "Enable Notifications") silently 401'd. Root-caused
+      via `railway logs` (401s on /api/habits/today and
+      /api/vapid-public-key from the affected device) and fixed by the
+      service-worker shell-list change above (network-first
+      navigations). CACHE bumped v9 -> v10 for this fix.
 
 - [ ] Where settings live. Server-side in SQLite (like habits.db -
       follows you across devices, needs a table/endpoints) vs.
