@@ -2,7 +2,7 @@ def test_fields_lists_configured_habit_fields(auth_client):
     resp = auth_client.get("/api/habits/fields")
     assert resp.status_code == 200
     keys = {f["key"] for f in resp.get_json()["fields"]}
-    assert keys == {"sleep_hours", "notes"}
+    assert keys == {"sleep_hours", "nicotine", "rumination", "exercise", "notes"}
 
 
 def test_today_not_logged_initially(auth_client):

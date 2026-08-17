@@ -48,6 +48,9 @@ def require_auth():
 # Add a numeric field here any time there's a new metric to track day-to-day.
 HABIT_FIELDS = [
     {"key": "sleep_hours", "label": "Sleep (hours)", "type": "number"},
+    {"key": "nicotine", "label": "Nicotine (0-4)", "type": "number"},
+    {"key": "rumination", "label": "Rumination (0-3)", "type": "number"},
+    {"key": "exercise", "label": "Exercise (0-5)", "type": "number"},
     {"key": "notes", "label": "Notes", "type": "text", "required": False},
 ]
 HABIT_FIELDS_BY_KEY = {field["key"]: field for field in HABIT_FIELDS}
